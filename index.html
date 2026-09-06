@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>🎙 Traduction Live — km / th / vi → fr</title>
+
+<!-- ════════════ PWA (Ajouter à l'écran d'accueil de l'iPhone) ════════════ -->
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Traduction Live">
+<meta name="theme-color" content="#0e0e13">
+<meta name="description" content="Traduction vocale en direct Khmer / Thaï / Vietnamien → Français. Gratuit, sans inscription ni clé.">
+<!-- Manifest PWA + icônes (installation écran d'accueil, Android/iOS) -->
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<!-- Splash screens iOS (apple-touch-startup-image) — même design, fond plein.
+     Safari récent génère son écran de lancement par capture d'écran ; ces
+     images restent le chemin « classique » honoré par WebKit pour l'ouverture
+     depuis l'écran d'accueil (3 tailles : SE/8, iPhone 6,1", iPhone 6,7"). -->
+<link rel="apple-touch-startup-image" media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="splash/splash-750x1334.png">
+<link rel="apple-touch-startup-image" media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="splash/splash-1179x2556.png">
+<link rel="apple-touch-startup-image" media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="splash/splash-1290x2796.png">
+
+<!-- ════════════ Puter.js (STT Whisper GRATUIT, sans clé API) ════════════
+     Le SDK officiel gère lui-même l'authentification « User-Pays » : à la
+     première transcription, une petite fenêtre Puter s'ouvre pour connecter
+     un compte gratuit (aucune carte bancaire, aucun token à coller).
+     L'API accepte directement un objet File/Blob — pas de FormData nécessaire. -->
+<script src="https://js.puter.com/v2/"></script>
+
+<!-- Thème appliqué AVANT le premier rendu (évite le flash clair/sombre).
+     Choix : localStorage « lt-theme » (auto | dark | light), défaut auto
+     (suit prefers-color-scheme de l'iPhone). data-theme porte la valeur
+     RÉSOLUE (dark|light) ; le préférence brute est relue au démarrage. -->
+<script>
+(function () {
+  try {
+    var pref = localStorage.getItem("lt-theme") || "auto";
+    var light = pref === "light" ||
+      (pref === "auto" && window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches);
+    document.documentElement.dataset.theme = light ? "light" : "dark";
+  } catch (e) { document.documentElement.dataset.theme = "dark"; }
+})();
+</script>
+
+<style>
+  :root{
+    /* Thème SOMBRE (design actuel, par défaut) */
+    --bg:#0e0e13; --panel:#16161e; --card:#1c1c26;
+    --text:#f2f2f7; --sub:#9a9aa6; --dim:#81818e;
+    --src:#d8d8e0; --fr:#ffffff; --err:#ff9b9b; --ok:#7fe0a0;
+    --console-bg:rgba(255,255,255,.045);
+    /* Couleurs de marque — même teinte, versions AA-safe (texte BLANC
+       ≥ 4,5:1). Partagées par les DEUX thèmes : le contraste blanc/teinte
+       ne dépend pas du fond. Les badges et bordures héritent. */
+    --km:#ce4646; --th:#2c76cd; --vi:#2c8649; --stop:#d24247;
+    --accent:#f5a623;
+    color-scheme:dark;
+  }
+  /* Thème CLAIR — mêmes couleurs de marque, fonds/textes inversés. */
+  html[data-theme="light"]{
+    --bg:#f2f3f7; --panel:#e6e8ef; --card:#ffffff;
+    --text:#191922; --sub:#55555f; --dim:#676770;
+    --src:#2c2c36; --fr:#101015; --err:#b3261e; --ok:#17723a;
+    --console-bg:rgba(15,15,25,.05);
+    /* --accent (texte 11px sur pastille jaune claire) assombri pour AA. */
+    --accent:#8b5e14;
+    color-scheme:light;
+  }
+  /* CONTRASTE ÉLEVÉ (Réglages → Accessibilité → Contraste élevé, iOS/Safari)
+     : les paires proches du seuil (4,55–4,6) passent à une marge ≥ 5,0–5,2:1.
+     Les autres couleurs (déjà ≥ 5:1) ne bougent pas. */
+  @media (prefers-contrast: more){
+    :root{
+      --km:#c34242; --th:#2a70c2; --vi:#2a7e45; --stop:#c73e43;
+      --dim:#8b8b98;
+    }
+    html[data-theme="light"]{
+      --dim:#5e5e67; --ok:#156835; --accent:#7f5612;
+    }
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0;height:100%}
+  body{
+    background:var(--bg); color:var(--text);
+    font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    display:flex; flex-direction:column;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  #app{max-width:560px;width:100%;margin:0 auto;flex:1;display:flex;flex-direction:column;gap:12px;padding:14px 16px 10px}
+
+  /* En-tête */
+  header{display:flex;align-items:center;gap:10px}
+  header h1{font-size:19px;margin:0;font-weight:700}
+  header .sub{font-size:11px;color:var(--sub);margin-top:1px;line-height:1.3}
+  #pill{font-size:11px;font-weight:700;padding:6px 10px;border-radius:999px;white-space:nowrap}
+  .pill-gray{background:rgba(154,154,166,.16);color:var(--sub)}
+  .pill-green{background:rgba(56,168,92,.18);color:var(--ok)}
+  .pill-yellow{background:rgba(245,166,35,.18);color:var(--accent)}
+
+  /* Sélecteur de thème (Auto / Sombre / Clair) */
+  .headRight{display:flex;flex-direction:column;align-items:flex-end;gap:6px;margin-left:auto}
+  #themeSel{display:flex;background:var(--panel);border-radius:999px;padding:2px;gap:2px}
+  #themeSel button{
+    border:none;background:transparent;color:var(--sub);
+    font:600 10.5px -apple-system,BlinkMacSystemFont,sans-serif;
+    padding:4px 10px;border-radius:999px;cursor:pointer;
+    -webkit-appearance:none;appearance:none;
+  }
+  #themeSel button.on{background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.22)}
+
+  /* Boutons de langue */
+  #langs{display:grid;gap:10px}
+  .langBtn{
+    display:flex;align-items:center;justify-content:center;gap:10px;
+    border:none;border-radius:14px;color:#fff;
+    font-size:17px;font-weight:700;padding:16px;cursor:pointer;
+    transition:transform .08s ease, filter .15s ease, opacity .2s;
+    -webkit-appearance:none;appearance:none;
+  }
+  .langBtn:active{transform:scale(.98)}
+  .langBtn.dim{opacity:.45}
+  #btnStop{
+    background:var(--stop);color:#fff;border:none;border-radius:14px;
+    font-size:16px;font-weight:700;padding:14px;cursor:pointer;
+  }
+  #btnStop:active{transform:scale(.98)}
+
+  /* Liste des traductions */
+  #history{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:8px;
+           -webkit-overflow-scrolling:touch;min-height:120px}
+  .card{background:var(--card);border-radius:12px;padding:10px 12px;border-left:3px solid var(--dim)}
+  .card .head{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--sub);margin-bottom:5px}
+  .badge{font-weight:800;font-size:9px;padding:2px 6px;border-radius:6px;color:#fff}
+  .card .src{font-size:15px;color:var(--src);margin:0 0 4px;word-break:break-word}
+  .card .fr{font-size:15px;color:var(--fr);margin:0;word-break:break-word}
+  .card .fr .flag{font-size:12px}
+  .card .err{color:var(--err);font-size:12px}
+  .empty{color:var(--dim);text-align:center;margin:auto;font-size:13px;padding:0 20px}
+
+  /* Console + statut */
+  #console{
+    font:10px/1.5 ui-monospace,Menlo,monospace;color:var(--dim);
+    background:var(--console-bg);border-radius:10px;padding:8px;
+    height:74px;overflow-y:auto;white-space:pre-wrap;
+  }
+  #status{font-size:11px;color:var(--sub);font-family:ui-monospace,Menlo,monospace}
+  #status b{color:var(--ok)}
+  .hidden{display:none!important}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <header>
+    <div>
+      <h1>🎙 Traduction Live</h1>
+      <div class="sub" id="subtitle">langue forcée par bouton · blocs de 8 s → fr</div>
+    </div>
+    <div class="headRight">
+      <div id="pill" class="pill-gray">Prêt</div>
+      <div id="themeSel" role="group" aria-label="Thème d'affichage (auto, sombre ou clair)">
+        <button type="button" data-th="auto" title="Suivre le réglage clair/sombre de l'iPhone">Auto</button>
+        <button type="button" data-th="dark" title="Toujours en sombre">Sombre</button>
+        <button type="button" data-th="light" title="Toujours en clair">Clair</button>
+      </div>
+    </div>
+  </header>
+
+  <div id="langs">
+    <button class="langBtn" data-idx="0" style="background:var(--km)">🇰🇭 Écouter Khmer</button>
+    <button class="langBtn" data-idx="1" style="background:var(--th)">🇹🇭 Écouter Thaï</button>
+    <button class="langBtn" data-idx="2" style="background:var(--vi)">🇻🇳 Écouter Vietnamien</button>
+  </div>
+  <button id="btnStop" class="hidden">🛑 Arrêter l'écoute</button>
+
+  <div id="history">
+    <div class="empty" id="emptyHint">Les phrases entendues (en khmer, thaï ou vietnamien)<br>et leur traduction française apparaîtront ici.</div>
+  </div>
+
+  <div id="console" aria-label="Console de débogage"></div>
+  <div id="status"><b>Statut :</b> Prêt</div>
+</div>
+
+<script>
+"use strict";
+/* ════════════════════════════════════════════════════════════════════════
+   TRADUCTION LIVE (PWA, fichier unique) — km / th / vi → français
+   ─────────────────────────────────────────────────────────────────────────
+   STRATÉGIE (blocs fixes de 8 s — le découpage ne coupe plus les phrases
+   en plein milieu comme l'ancien détecteur de silence) :
+     1. MediaRecorder enregistre le micro en continu ; chaque bloc de 8 s
+        pile est finalisé et envoyé, et le bloc suivant démarre aussitôt.
+        Format léger compatible Safari iPhone : audio/mp4 (AAC).
+     2. Chaque bloc part vers l'API de transcription Whisper GRATUITE de
+        Puter via le SDK officiel (puter.ai.speech2txt) — aucun token à
+        gérer ; le prompt contextuel français est joint à la requête.
+     3. Puter ne traduit qu'en ANGLAIS (translate:true) : on transcrit donc
+        en langue d'origine puis on traduit en français avec l'endpoint
+        Google Translate sans clé (gtx), secours MyMemory — le vrai moteur
+        Google, aucune carte bancaire.
+     4. Interface : 3 gros boutons colorés (langue FORCÉE) + Arrêter,
+        liste chronologique (texte original + français), statut et console.
+   ════════════════════════════════════════════════════════════════════════ */
+
+const LANGUAGES = [
+  { code:"km", locale:"km-KH", label:"Khmer",      flag:"🇰🇭", color:"var(--km)" },
+  { code:"th", locale:"th-TH", label:"Thaï",       flag:"🇹🇭", color:"var(--th)" },
+  { code:"vi", locale:"vi-VN", label:"Vietnamien", flag:"🇻🇳", color:"var(--vi)" }
+];
+
+// Constantes moteur (réglables ici, sans recompiler)
+const BLOCK_SECONDS   = 8;                 // durée FIXE d'un bloc d'enregistrement
+const PUTER_MODEL     = "gpt-4o-mini-transcribe"; // ou "whisper-1" / "gpt-4o-transcribe"
+const SILENCE_FLOOR_DB = -42;              // bloc plus faible → considéré muet
+const CONSOLE_MAX      = 60;
+
+// Prompt contextuel joint à la transcription (le décodeur l'utilise comme
+// guide ; certains modèles l'ignorent sans erreur).
+const CONTEXT_PROMPT =
+  "Ceci est une conversation amicale et professionnelle entre collègues de travail " +
+  "parlant Khmer, Thaï ou Vietnamien. Traduis le message en français correct, fluide " +
+  "et naturel. Ignore les bruits de fond et restitue des phrases complètes.";
+
+// ── Éléments DOM ──────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const el = { langs:$("langs"), btnStop:$("btnStop"), history:$("history"),
+             empty:$("emptyHint"), pill:$("pill"), status:$("status"),
+             console:$("console"), subtitle:$("subtitle") };
+
+// ── État ──────────────────────────────────────────────────────────────────
+const state = {
+  running:false,
+  active:0,              // langue FORCÉE (0=km, 1=th, 2=vi)
+  stream:null,
+  recorder:null,
+  blockTimer:null,
+  blockNo:0,
+  sending:false,         // une seule analyse à la fois
+  queue:[],              // blocs prêts, envoyés un à un
+  lastLevelDB:-80,       // dernier niveau mesuré (marqueur console)
+  entries:0
+};
+
+// ── Log console (temps réel) ──────────────────────────────────────────────
+function log(msg){
+  const t = new Date().toLocaleTimeString("fr-FR");
+  el.console.textContent += t + "  " + msg + "\n";
+  const lines = el.console.textContent.split("\n");
+  if (lines.length > CONSOLE_MAX) el.console.textContent = lines.slice(-CONSOLE_MAX).join("\n");
+  el.console.scrollTop = el.console.scrollHeight;
+}
+
+function setStatus(text){ el.status.innerHTML = "<b>Statut :</b> " + text; }
+function setPill(text, cls){ el.pill.textContent = text; el.pill.className = "pill-" + cls; }
+
+// ── UI : boutons langue / arrêt ───────────────────────────────────────────
+function renderButtons(){
+  el.langs.classList.toggle("hidden", state.running);
+  el.btnStop.classList.toggle("hidden", !state.running);
+  for (const b of el.langs.children) b.classList.toggle("dim", state.running);
+}
+
+el.langs.addEventListener("click", e => {
+  const btn = e.target.closest(".langBtn");
+  if (!btn || state.running) return;
+  state.active = Number(btn.dataset.idx);
+  log("🎯 " + lang().flag + " " + lang().label + " sélectionné — démarrage de l'écoute en continu.");
+  startListening();
+});
+
+el.btnStop.addEventListener("click", stopListening);
+const lang = () => LANGUAGES[state.active];
+
+// ── Thème : Auto (suit l'iPhone) / Sombre / Clair ────────────────────────
+// Préférence enregistrée dans localStorage (« lt-theme »), défaut « auto ».
+// data-theme (posé dès le <head> avant le premier rendu) porte la valeur
+// résolue ; ce bloc gère le sélecteur, la persistance et le suivi en direct
+// des changements clair/sombre du système quand on est en « auto ».
+const themeMeta = document.querySelector('meta[name="theme-color"]');
+const THEME_META_COLOR = { dark: "#0e0e13", light: "#f2f3f7" };
+let themePref = "auto";
+function systemPrefersLight(){
+  return !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches);
+}
+function applyTheme(){
+  const light = themePref === "light" || (themePref === "auto" && systemPrefersLight());
+  const resolved = light ? "light" : "dark";
+  document.documentElement.dataset.theme = resolved;
+  if (themeMeta) themeMeta.content = THEME_META_COLOR[resolved];
+  for (const b of document.querySelectorAll("#themeSel button")){
+    b.classList.toggle("on", b.dataset.th === themePref);
+    b.setAttribute("aria-pressed", b.dataset.th === themePref ? "true" : "false");
+  }
+  log("🎨 Thème : " + themePref + (themePref === "auto" ? " (suit l'iPhone → " + resolved + ")" : " → " + resolved));
+}
+function setTheme(pref){
+  themePref = pref;
+  try { localStorage.setItem("lt-theme", pref); } catch (_) {}
+  applyTheme();
+}
+try { themePref = localStorage.getItem("lt-theme") || "auto"; } catch (_) {}
+document.getElementById("themeSel").addEventListener("click", e => {
+  const b = e.target.closest("button");
+  if (b) setTheme(b.dataset.th);
+});
+if (window.matchMedia){
+  const mq = window.matchMedia("(prefers-color-scheme: light)");
+  const onSysChange = () => { if (themePref === "auto") applyTheme(); };
+  if (mq.addEventListener) mq.addEventListener("change", onSysChange);
+  else if (mq.addListener) mq.addListener(onSysChange);
+}
+applyTheme();
+
+// Contraste élevé système (Réglages → Accessibilité → Contraste élevé). La
+// media query CSS `prefers-contrast: more` renforce déjà la palette ; on
+// annonce l'état dans la console pour vérifier sur l'appareil.
+if (window.matchMedia){
+  const hcm = window.matchMedia("(prefers-contrast: more)");
+  const onHC = e => log(e.matches
+    ? "♿ Contraste élevé actif — palette renforcée (marges ≥ 5:1)."
+    : "ℹ Contraste élevé désactivé — palette normale.");
+  if (hcm.addEventListener) hcm.addEventListener("change", onHC);
+  else if (hcm.addListener) hcm.addListener(onHC);
+  if (hcm.matches) log("♿ Contraste élevé actif — palette renforcée (marges ≥ 5:1).");
+}
+
+// ── Détection de silence (niveau RMS du micro) — pure, affichage + skip ───
+function dBFromTimeDomain(arr){
+  let sum = 0;
+  for (let i = 0; i < arr.length; i++){ const v = arr[i]; sum += v * v; }
+  const rms = Math.sqrt(sum / Math.max(arr.length,1));
+  return rms <= 0 ? -120 : 20 * Math.log10(rms);
+}
+
+// ── Capture audio : blocs fixes de 8 s (MediaRecorder) ────────────────────
+function pickMime(){
+  const candidates = ["audio/mp4", "audio/mp4;codecs=mp4a.40.2", "audio/aac", "audio/webm;codecs=opus"];
+  for (const m of candidates){
+    if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) return m;
+  }
+  return "";
+}
+
+async function startListening(){
+  if (state.running) return;
+  try {
+    state.stream = await navigator.mediaDevices.getUserMedia({
+      audio:{ echoCancellation:true, noiseSuppression:true, autoGainControl:true }
+    });
+  } catch (err){
+    setStatus("❌ Micro refusé — autorisez-le dans Réglages Safari.");
+    log("❌ getUserMedia refusée : " + err.message);
+    return;
+  }
+  state.running = true;
+  renderButtons();
+  setStatus("Prêt — enregistrement continu…");
+  setPill("En écoute", "green");
+  // Garde l'écran éveillé (mode PWA plein écran).
+  try { if (navigator.wakeLock) await navigator.wakeLock.request("screen"); } catch (_) {}
+
+  startBlock();
+  // File d'attente : chaque bloc finalisé est traité à la suite.
+  pumpQueue();
+}
+
+function startBlock(){
+  if (!state.running) return;
+  state.blockNo++;
+  const mime = pickMime();
+  let rec;
+  try {
+    rec = new MediaRecorder(state.stream, mime ? { mimeType: mime } : undefined);
+  } catch (err) {
+    log("⚠ MediaRecorder indisponible (" + (err.message||err) + ").");
+    stopListening();
+    return;
+  }
+  state.recorder = rec;
+  const chunks = [];
+  rec.ondataavailable = ev => { if (ev.data && ev.data.size > 0) chunks.push(ev.data); };
+  rec.onstop = () => {
+    const blob = new Blob(chunks, { type: rec.mimeType || "audio/mp4" });
+    chunks.length = 0;
+    enqueueBlob(blob);
+    if (state.running) startBlock();          // bloc suivant IMMÉDIATEMENT
+  };
+  rec.start();
+  log("🎙 Bloc #" + state.blockNo + " — enregistrement (" + BLOCK_SECONDS + " s, " + (mime || "défaut") + ")…");
+  state.blockTimer = setTimeout(() => {
+    try { if (rec.state === "recording") rec.stop(); } catch (_) {}
+  }, BLOCK_SECONDS * 1000);
+}
+
+function enqueueBlob(blob){
+  state.queue.push(blob);
+  pumpQueue();
+}
+
+// ── Envoi et traduction (un bloc à la fois) ───────────────────────────────
+async function pumpQueue(){
+  if (state.sending || state.queue.length === 0) return;
+  state.sending = true;
+  const blob = state.queue.shift();
+  await processBlock(blob);
+  state.sending = false;
+  pumpQueue();
+}
+
+async function processBlock(blob){
+  const l = lang();
+  setStatus("Analyse Whisper en cours…");
+  setPill("Analyse…", "yellow");
+  log("📡 Bloc envoyé à Puter (" + PUTER_MODEL + ", langue " + l.label + ")…");
+  try {
+    // Étape 1 — TRANSCRIPTION locale d'origine (Puter ne traduit qu'en anglais).
+    let text = await puterTranscribe(blob);
+    if (!text){
+      log("🔇 Aucun texte reconnu — bloc ignoré.");
+      setStatus("Enregistrement…");
+      setPill("En écoute", "green");
+      return;
+    }
+    log("⏸ Capté : « " + clip(text, 90) + " »");
+    setStatus("Traduction en cours… (gtx puis MyMemory)");
+    // Étape 2 — TRADUCTION → français (Google gtx sans clé, secours MyMemory).
+    const fr = await translateToFrench(text);
+    addEntry(l, text, fr);
+    if (fr){
+      log("✅ Traduit : « " + clip(fr, 90) + " »");
+      setStatus("Traduit ! — « " + clip(fr, 60) + " »");
+      setPill("Traduit ✓", "green");
+      setTimeout(() => { if (state.running){ setStatus("Enregistrement…"); setPill("En écoute", "green"); } }, 2500);
+    } else {
+      setStatus("Traduit ! (sans texte fr — voir erreur ci-dessus)");
+      setPill("En écoute", "green");
+    }
+  } catch (err){
+    log("⚠ Échec du bloc : " + (err && err.message ? err.message : err));
+    setStatus("Erreur réseau — bloc relancé au suivant");
+    setPill("En écoute", "green");
+  }
+}
+
+// Transcription Puter (SDK officiel, gère l'auth « User-Pays » à la première
+// utilisation : une petite fenêtre Puter s'ouvre — compte gratuit, sans clé).
+async function puterTranscribe(blob){
+  if (typeof puter === "undefined" || !puter || !puter.ai){
+    throw new Error("Puter.js non chargé — vérifiez la connexion réseau.");
+  }
+  try {
+    const res = await puter.ai.speech2txt(blob, { model: PUTER_MODEL, prompt: CONTEXT_PROMPT });
+    return clean(res && (res.text || res));
+  } catch (err){
+    const msg = String((err && err.message) || err);
+    if (/auth|sign|login|401|token|permission|denied|required/i.test(msg)){
+      log("🔑 Compte Puter requis (gratuit) — ouverture de la fenêtre de connexion…");
+      if (puter.auth && puter.auth.signIn) await puter.auth.signIn();
+      const res = await puter.ai.speech2txt(blob, { model: PUTER_MODEL });
+      return clean(res && (res.text || res));
+    }
+    // Paramètre « prompt » non supporté par le modèle ? Nouvel essai sans.
+    if (/prompt|argument|param/i.test(msg)){
+      log("ℹ Le modèle a refusé le paramètre prompt — nouvel essai sans lui.");
+      const res = await puter.ai.speech2txt(blob, { model: PUTER_MODEL });
+      return clean(res && (res.text || res));
+    }
+    throw err;
+  }
+}
+
+// ── Traduction française gratuite sans clé ────────────────────────────────
+// 1) Google Translate (client=gtx, sl=auto → fr) : le vrai moteur Google.
+// 2) Secours MyMemory (langpair=autodetect|fr, CORS ouvert).
+async function translateToFrench(text){
+  const q = text.trim();
+  if (!q) return null;
+  try {
+    const url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=fr&dt=t&q=" + encodeURIComponent(q);
+    const r = await fetch(url, { method:"GET" });
+    if (r.ok){
+      const j = await r.json();
+      if (Array.isArray(j) && Array.isArray(j[0])){
+        const out = j[0].map(seg => (seg && seg[0]) || "").join("").trim();
+        if (out) return out;
+      }
+    }
+  } catch (_) {}
+  try {
+    const url = "https://api.mymemory.translated.net/get?q=" + encodeURIComponent(q) + "&langpair=autodetect|fr";
+    const r = await fetch(url);
+    if (r.ok){
+      const j = await r.json();
+      const out = j && j.responseData && j.responseData.translatedText;
+      if (out && String(out).trim()) return String(out).trim();
+    }
+  } catch (_) {}
+  return null;
+}
+
+// ── Affichage (fiche chronologique : original + français) ─────────────────
+function addEntry(l, source, fr){
+  const card = document.createElement("div");
+  card.className = "card";
+  card.style.borderLeftColor = l.color;
+  const time = new Date().toLocaleTimeString("fr-FR", { hour:"2-digit", minute:"2-digit" });
+  const head = document.createElement("div");
+  head.className = "head";
+  head.innerHTML = '<span class="badge" style="background:' + l.color + '">' + l.code.toUpperCase() + '</span>'
+                 + '<span>' + l.flag + " " + l.label + "</span><span style='margin-left:auto'>" + time + "</span>";
+  const src = document.createElement("p");
+  src.className = "src"; src.textContent = source;
+  card.appendChild(head); card.appendChild(src);
+  if (fr){
+    const f = document.createElement("p");
+    f.className = "fr";
+    f.innerHTML = '<span class="flag">🇫🇷</span> ' + escapeHtml(fr);
+    card.appendChild(f);
+  } else {
+    const e = document.createElement("p");
+    e.className = "err"; e.textContent = "Traduction indisponible (réseau) — texte original conservé.";
+    card.appendChild(e);
+  }
+  el.empty.classList.add("hidden");
+  el.history.appendChild(card);
+  state.entries++;
+  while (el.history.children.length > 200) el.history.removeChild(el.history.firstChild);
+  el.history.scrollTop = el.history.scrollHeight;
+}
+
+// ── Arrêt ─────────────────────────────────────────────────────────────────
+function stopListening(){
+  if (!state.running) return;
+  state.running = false;
+  if (state.blockTimer) clearTimeout(state.blockTimer);
+  if (state.recorder && state.recorder.state !== "inactive") {
+    try { state.recorder.stop(); } catch (_) {}
+    state.recorder = null;
+  }
+  if (state.stream){
+    state.stream.getTracks().forEach(t => t.stop());
+    state.stream = null;
+  }
+  state.queue = [];
+  renderButtons();
+  setStatus("Prêt");
+  setPill("Prêt", "gray");
+  log("🛑 Écoute arrêtée.");
+}
+
+// ── Utilitaires ───────────────────────────────────────────────────────────
+function clean(s){
+  if (s == null) return "";
+  return String(s).replace(/\s+/g, " ").trim();
+}
+function clip(s, max){ return (s && s.length > max) ? s.slice(0, max) + "…" : s; }
+function escapeHtml(s){
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+// ── Service worker (PWA : installation + interface hors-ligne) ───────────
+if ("serviceWorker" in navigator && window.isSecureContext){
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js").then(() => {
+      log("✅ PWA : service worker actif — ajout possible à l'écran d'accueil, interface hors-ligne.");
+    }).catch(err => {
+      log("⚠ Service worker non enregistré : " + ((err && err.message) || err));
+    });
+  });
+} else {
+  log("ℹ Service worker indisponible ici (contexte sécurisé requis) — l'app reste fonctionnelle en ligne.");
+}
+
+// ── Démarrage ─────────────────────────────────────────────────────────────
+log("🚀 Prêt — choisissez une langue pour démarrer l'écoute en continu.");
+setStatus("Prêt — choisissez une langue (Khmer, Thaï ou Vietnamien).");
+if (!window.isSecureContext){
+  log("⚠ Contexte non sécurisé : le micro exige https (ou localhost).");
+  setStatus("⚠ Nécessite https (contexte sécurisé)");
+}
+if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+  log("❌ navigator.mediaDevices indisponible dans ce navigateur.");
+}
+if (window.MediaRecorder && MediaRecorder.isTypeSupported("audio/mp4")){
+  log("ℹ MediaRecorder audio/mp4 supporté (Safari iPhone).");
+} else {
+  log("ℹ audio/mp4 non supporté ici — repli automatique sur un autre format.");
+}
+</script>
+</body>
+</html>
