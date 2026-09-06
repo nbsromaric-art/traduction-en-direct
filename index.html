@@ -11,7 +11,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Traduction Live">
 <meta name="theme-color" content="#0e0e13">
-<meta name="description" content="Traduction vocale en direct Khmer / Thaï / Vietnamien → Français. Gratuit, sans inscription ni clé.">
+<meta name="description" content="Traduction vocale en direct Khmer / Thaï / Vietnamien → Français. Gratuit — Whisper Hugging Face, clé gratuite sans carte bancaire.">
 <!-- Manifest PWA + icônes (installation écran d'accueil, Android/iOS) -->
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
@@ -25,12 +25,12 @@
 <link rel="apple-touch-startup-image" media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="splash/splash-1179x2556.png">
 <link rel="apple-touch-startup-image" media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="splash/splash-1290x2796.png">
 
-<!-- ════════════ Puter.js (STT Whisper GRATUIT, sans clé API) ════════════
-     Le SDK officiel gère lui-même l'authentification « User-Pays » : à la
-     première transcription, une petite fenêtre Puter s'ouvre pour connecter
-     un compte gratuit (aucune carte bancaire, aucun token à coller).
-     L'API accepte directement un objet File/Blob — pas de FormData nécessaire. -->
-<script src="https://js.puter.com/v2/"></script>
+<!-- ════════ Hugging Face — Whisper (STT GRATUIT, clé gratuite sans carte) ════════
+     Point d'entrée : l'API d'inférence de Hugging Face (router.huggingface.co),
+     le hôte officiel actuel, modèle openai/whisper-large-v3. Une « Access Token »
+     Hugging Face (gratuite — huggingface.co → Réglages → Access Tokens) est
+     collée une fois via le bouton ⚙️ et stockée dans le localStorage de l'iPhone.
+     Aucune carte bancaire, aucun compte payant. -->
 
 <!-- Thème appliqué AVANT le premier rendu (évite le flash clair/sombre).
      Choix : localStorage « lt-theme » (auto | dark | light), défaut auto
@@ -113,6 +113,30 @@
   }
   #themeSel button.on{background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.22)}
 
+  /* Bouton engrenage (config clé Hugging Face) + modale */
+  #btnConfig{
+    background:transparent;border:none;color:var(--sub);
+    font-size:16px;padding:3px 6px;border-radius:8px;cursor:pointer;
+    -webkit-appearance:none;appearance:none;line-height:1;
+  }
+  #btnConfig:active{background:var(--console-bg)}
+  #cfgOverlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;
+              align-items:center;justify-content:center;padding:20px;z-index:50}
+  #cfgOverlay.open{display:flex}
+  #cfgModal{background:var(--panel);color:var(--text);border-radius:14px;padding:18px;
+            width:100%;max-width:420px;box-shadow:0 10px 40px rgba(0,0,0,.45);
+            border:1px solid var(--console-bg)}
+  #cfgModal h2{margin:0 0 6px;font-size:16px}
+  #cfgNote,.cfgNote{font-size:11px;color:var(--sub);line-height:1.5;margin-bottom:12px}
+  #cfgModal input{width:100%;box-sizing:border-box;font:13px ui-monospace,Menlo,monospace;
+                  padding:10px;border-radius:8px;border:1px solid var(--console-bg);
+                  background:var(--card);color:var(--text)}
+  #cfgRow{display:flex;gap:8px;margin-top:12px}
+  #cfgRow button{flex:1;padding:11px;border:none;border-radius:8px;font-weight:700;
+                 font-size:13px;cursor:pointer;-webkit-appearance:none;appearance:none}
+  #btnCfgSave{background:var(--vi);color:#fff}
+  #btnCfgClose{background:var(--console-bg);color:var(--text)}
+
   /* Boutons de langue */
   #langs{display:grid;gap:10px}
   .langBtn{
@@ -159,9 +183,10 @@
   <header>
     <div>
       <h1>🎙 Traduction Live</h1>
-      <div class="sub" id="subtitle">langue forcée par bouton · blocs de 8 s → fr</div>
+      <div class="sub" id="subtitle">langue forcée · blocs de 8 s → Whisper (HF) → fr</div>
     </div>
     <div class="headRight">
+      <button id="btnConfig" type="button" title="Configurer la clé Hugging Face (analyse Whisper, gratuite)">⚙️</button>
       <div id="pill" class="pill-gray">Prêt</div>
       <div id="themeSel" role="group" aria-label="Thème d'affichage (auto, sombre ou clair)">
         <button type="button" data-th="auto" title="Suivre le réglage clair/sombre de l'iPhone">Auto</button>
@@ -186,6 +211,23 @@
   <div id="status"><b>Statut :</b> Prêt</div>
 </div>
 
+<!-- ════════════ Config clé Hugging Face (bouton ⚙️) ════════════ -->
+<div id="cfgOverlay">
+  <div id="cfgModal" role="dialog" aria-label="Clé Hugging Face">
+    <h2>🔑 Hugging Face — Whisper</h2>
+    <div class="cfgNote">Collez votre <b>Access Token</b> Hugging Face (créé <b>gratuitement</b> sur
+      <b>huggingface.co</b> → Réglages → <b>Access Tokens</b> → <b>Create new token</b>, sans carte
+      bancaire). Le token est enregistré <b>uniquement dans ce navigateur</b> (localStorage) et sert
+      à analyser chaque bloc audio de 8 s avec le modèle <b>openai/whisper-large-v3</b>.</div>
+    <input id="hfToken" type="password" autocomplete="off" spellcheck="false"
+           placeholder="hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
+    <div id="cfgRow">
+      <button type="button" id="btnCfgSave">Enregistrer</button>
+      <button type="button" id="btnCfgClose">Fermer</button>
+    </div>
+  </div>
+</div>
+
 <script>
 "use strict";
 /* ════════════════════════════════════════════════════════════════════════
@@ -196,15 +238,20 @@
      1. MediaRecorder enregistre le micro en continu ; chaque bloc de 8 s
         pile est finalisé et envoyé, et le bloc suivant démarre aussitôt.
         Format léger compatible Safari iPhone : audio/mp4 (AAC).
-     2. Chaque bloc part vers l'API de transcription Whisper GRATUITE de
-        Puter via le SDK officiel (puter.ai.speech2txt) — aucun token à
-        gérer ; le prompt contextuel français est joint à la requête.
-     3. Puter ne traduit qu'en ANGLAIS (translate:true) : on transcrit donc
+     2. Chaque bloc part vers l'API d'inférence GRATUITE de Hugging Face
+        (router.huggingface.co) avec le modèle Whisper openai/whisper-large-v3.
+        Une « Access Token » HF (gratuite, sans carte bancaire) est fournie
+        une fois via le bouton ⚙️ et stockée dans le localStorage. La langue
+        source est FORCÉE d'après le bouton choisi (km/th/vi) pour une
+        transcription plus précise.
+     3. Whisper ne sait PAS produire du français directement (task=translate
+        sort de l'anglais ; « language » = langue SOURCE) : on transcrit donc
         en langue d'origine puis on traduit en français avec l'endpoint
         Google Translate sans clé (gtx), secours MyMemory — le vrai moteur
         Google, aucune carte bancaire.
      4. Interface : 3 gros boutons colorés (langue FORCÉE) + Arrêter,
-        liste chronologique (texte original + français), statut et console.
+        liste chronologique (texte original + français), statut, console,
+        et bouton ⚙️ pour la clé.
    ════════════════════════════════════════════════════════════════════════ */
 
 const LANGUAGES = [
@@ -215,22 +262,19 @@ const LANGUAGES = [
 
 // Constantes moteur (réglables ici, sans recompiler)
 const BLOCK_SECONDS   = 8;                 // durée FIXE d'un bloc d'enregistrement
-const PUTER_MODEL     = "gpt-4o-mini-transcribe"; // ou "whisper-1" / "gpt-4o-transcribe"
+const HF_MODEL        = "openai/whisper-large-v3"; // ou "openai/whisper-large-v3-turbo" (plus rapide)
+const HF_BASE         = "https://router.huggingface.co/hf-inference/models/" + HF_MODEL;
+const HF_TOKEN_KEY    = "lt-hf-token";     // Access Token HF, localStorage
 const SILENCE_FLOOR_DB = -42;              // bloc plus faible → considéré muet
 const CONSOLE_MAX      = 60;
-
-// Prompt contextuel joint à la transcription (le décodeur l'utilise comme
-// guide ; certains modèles l'ignorent sans erreur).
-const CONTEXT_PROMPT =
-  "Ceci est une conversation amicale et professionnelle entre collègues de travail " +
-  "parlant Khmer, Thaï ou Vietnamien. Traduis le message en français correct, fluide " +
-  "et naturel. Ignore les bruits de fond et restitue des phrases complètes.";
 
 // ── Éléments DOM ──────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
 const el = { langs:$("langs"), btnStop:$("btnStop"), history:$("history"),
              empty:$("emptyHint"), pill:$("pill"), status:$("status"),
-             console:$("console"), subtitle:$("subtitle") };
+             console:$("console"), subtitle:$("subtitle"),
+             btnConfig:$("btnConfig"), cfgOverlay:$("cfgOverlay"),
+             cfgInput:$("hfToken"), btnCfgSave:$("btnCfgSave"), btnCfgClose:$("btnCfgClose") };
 
 // ── État ──────────────────────────────────────────────────────────────────
 const state = {
@@ -329,6 +373,32 @@ if (window.matchMedia){
   if (hcm.matches) log("♿ Contraste élevé actif — palette renforcée (marges ≥ 5:1).");
 }
 
+// ── Config clé Hugging Face (bouton ⚙️, token dans localStorage) ──────────
+function openConfig(){ el.cfgInput.value = getHFToken(); el.cfgOverlay.classList.add("open"); el.cfgInput.focus(); }
+function closeConfig(){ el.cfgOverlay.classList.remove("open"); }
+el.btnConfig.addEventListener("click", openConfig);
+el.btnCfgClose.addEventListener("click", closeConfig);
+el.cfgOverlay.addEventListener("click", e => { if (e.target === el.cfgOverlay) closeConfig(); });
+el.btnCfgSave.addEventListener("click", () => {
+  const t = el.cfgInput.value.trim();
+  setHFToken(t);
+  closeConfig();
+  if (t){
+    if (!/^hf_/i.test(t)) log("⚠ Ce token ne commence pas par « hf_ » — vérifiez-le (Access Token Hugging Face).");
+    log("🔑 Token Hugging Face enregistré (" + maskToken(t) + ").");
+    setStatus("Prêt — clé enregistrée.");
+  } else {
+    log("⚠ Token effacé — l'analyse exige une clé Hugging Face.");
+    setStatus("🔑 Clé Hugging Face manquante (ouvrez ⚙️).");
+  }
+});
+el.cfgInput.addEventListener("keydown", e => { if (e.key === "Enter") el.btnCfgSave.click(); });
+if (getHFToken()){
+  log("🔑 Clé Hugging Face présente (" + maskToken(getHFToken()) + ") — Whisper prêt.");
+} else {
+  log("ℹ Aucune clé Hugging Face — ouvrez ⚙️ pour coller votre Access Token (gratuit) avant de lancer l'écoute.");
+}
+
 // ── Détection de silence (niveau RMS du micro) — pure, affichage + skip ───
 function dBFromTimeDomain(arr){
   let sum = 0;
@@ -414,12 +484,21 @@ async function pumpQueue(){
 
 async function processBlock(blob){
   const l = lang();
+  // Clé Hugging Face manquante → ouvre la config ⚙️ et ignore ce bloc.
+  if (!getHFToken()){
+    setStatus("🔑 Collez votre clé Hugging Face (bouton ⚙️)");
+    setPill("Clé requise", "yellow");
+    log("🔑 Aucun token Hugging Face — ouverture des réglages (clé gratuite, sans carte).");
+    openConfig();
+    setTimeout(() => { if (state.running){ setStatus("Enregistrement…"); setPill("En écoute", "green"); } }, 2000);
+    return;
+  }
   setStatus("Analyse Whisper en cours…");
   setPill("Analyse…", "yellow");
-  log("📡 Bloc envoyé à Puter (" + PUTER_MODEL + ", langue " + l.label + ")…");
+  log("📡 Bloc envoyé à Hugging Face (" + HF_MODEL + ", langue forcée " + l.label + ")…");
   try {
-    // Étape 1 — TRANSCRIPTION locale d'origine (Puter ne traduit qu'en anglais).
-    let text = await puterTranscribe(blob);
+    // Étape 1 — TRANSCRIPTION en langue d'origine via Whisper (HF, langue forcée).
+    let text = await hfTranscribe(blob, l.code);
     if (!text){
       log("🔇 Aucun texte reconnu — bloc ignoré.");
       setStatus("Enregistrement…");
@@ -447,31 +526,62 @@ async function processBlock(blob){
   }
 }
 
-// Transcription Puter (SDK officiel, gère l'auth « User-Pays » à la première
-// utilisation : une petite fenêtre Puter s'ouvre — compte gratuit, sans clé).
-async function puterTranscribe(blob){
-  if (typeof puter === "undefined" || !puter || !puter.ai){
-    throw new Error("Puter.js non chargé — vérifiez la connexion réseau.");
-  }
+// ── Clé Hugging Face (localStorage) ────────────────────────────────────────
+function getHFToken(){ try { return (localStorage.getItem(HF_TOKEN_KEY) || "").trim(); } catch (_) { return ""; } }
+function setHFToken(t){ try { localStorage.setItem(HF_TOKEN_KEY, (t || "").trim()); } catch (_) {} }
+function maskToken(t){
+  if (!t) return "";
+  return t.length > 10 ? t.slice(0, 5) + "…" + t.slice(-4) : "…";
+}
+
+// ── Transcription Whisper (Hugging Face, inférence GRATUITE) ──────────────
+// La langue source est FORCÉE d'après le bouton choisi (meilleure précision) :
+// on essaie d'abord la forme JSON documentée {inputs: base64, parameters:
+// {task, language}} ; si l'API refuse les paramètres, repli sur l'envoi du
+// fichier audio brut (langue détectée automatiquement par Whisper).
+function blobToBase64(blob){
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => { const s = String(fr.result || ""); const i = s.indexOf(","); resolve(i >= 0 ? s.slice(i + 1) : s); };
+    fr.onerror = () => reject(fr.error);
+    fr.readAsDataURL(blob);
+  });
+}
+async function readHfText(r){
+  const j = await r.json().catch(() => null);
+  const t = j && (j.text || (j[0] && j[0].text));
+  return clean(t);
+}
+function hfError(r, j){
+  const msg = j && j.error ? String(j.error) : ("HTTP " + r.status);
+  if (r.status === 401) return new Error("Jeton Hugging Face invalide — ouvrez ⚙️ et collez un token valide.");
+  if (r.status === 429) return new Error("Limite gratuite atteinte (429) — patientez quelques secondes.");
+  if (r.status === 503) return new Error("Modèle en chargement côté Hugging Face — le bloc suivant réessaiera.");
+  return new Error(msg);
+}
+async function hfTranscribe(blob, langCode){
+  const token = getHFToken();
+  if (!token) throw new Error("NO_TOKEN");
+  // Forme JSON (paramètres : langue forcée) — essayée en premier.
   try {
-    const res = await puter.ai.speech2txt(blob, { model: PUTER_MODEL, prompt: CONTEXT_PROMPT });
-    return clean(res && (res.text || res));
-  } catch (err){
-    const msg = String((err && err.message) || err);
-    if (/auth|sign|login|401|token|permission|denied|required/i.test(msg)){
-      log("🔑 Compte Puter requis (gratuit) — ouverture de la fenêtre de connexion…");
-      if (puter.auth && puter.auth.signIn) await puter.auth.signIn();
-      const res = await puter.ai.speech2txt(blob, { model: PUTER_MODEL });
-      return clean(res && (res.text || res));
-    }
-    // Paramètre « prompt » non supporté par le modèle ? Nouvel essai sans.
-    if (/prompt|argument|param/i.test(msg)){
-      log("ℹ Le modèle a refusé le paramètre prompt — nouvel essai sans lui.");
-      const res = await puter.ai.speech2txt(blob, { model: PUTER_MODEL });
-      return clean(res && (res.text || res));
-    }
-    throw err;
-  }
+    const b64 = await blobToBase64(blob);
+    const r = await fetch(HF_BASE, {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
+      body: JSON.stringify({ inputs: b64, parameters: { task: "transcribe", language: langCode } })
+    });
+    if (r.ok){ const t = await readHfText(r); if (t) return t; }
+    else log("ℹ Forme paramétrée refusée (HTTP " + r.status + ") — repli sur audio brut.");
+  } catch (_) { log("ℹ Paramètres JSON indisponibles — repli sur audio brut."); }
+  // Repli : corps = audio brut, langue détectée automatiquement par Whisper.
+  const r = await fetch(HF_BASE, {
+    method: "POST",
+    headers: { "Authorization": "Bearer " + token, "Content-Type": (blob.type || "audio/mp4") },
+    body: blob
+  });
+  const j = await r.json().catch(() => null);
+  if (r.ok){ const t = j && clean(j.text); if (t) return t; }
+  throw hfError(r, j);
 }
 
 // ── Traduction française gratuite sans clé ────────────────────────────────
