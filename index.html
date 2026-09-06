@@ -137,6 +137,14 @@
   #btnCfgSave{background:var(--vi);color:#fff}
   #btnCfgClose{background:var(--console-bg);color:var(--text)}
 
+  /* Avertissement WebM désactivé */
+  #webmWarn{position:relative;background:rgba(245,166,35,.15);border:1px solid var(--accent);
+            color:var(--accent);border-radius:10px;padding:9px 30px 9px 11px;
+            font-size:12px;line-height:1.45}
+  #webmWarn .webmWarnSub{font-size:11px;color:var(--sub);margin-top:2px;line-height:1.4}
+  #webmWarnClose{position:absolute;top:6px;right:6px;background:transparent;border:none;
+                 color:var(--sub);font-size:14px;cursor:pointer;padding:2px 5px}
+
   /* Boutons de langue */
   #langs{display:grid;gap:10px}
   .langBtn{
@@ -196,6 +204,14 @@
     </div>
   </header>
 
+  <!-- Avertissement visible si WebM MediaRecorder est désactivé (Safari) -->
+  <div id="webmWarn" class="hidden" role="alert">
+    <div><b>⚠️ WebM est désactivé</b> dans Safari — l'analyse Hugging Face peut échouer.</div>
+    <div class="webmWarnSub">Activez l'option expérimentale « WebM MediaRecorder » dans<br>
+      Réglages → Safari → Avancé → Fonctionnalités expérimentales, puis rechargez cette page.</div>
+    <button type="button" id="webmWarnClose" aria-label="Fermer l'avertissement">✕</button>
+  </div>
+
   <div id="langs">
     <button class="langBtn" data-idx="0" style="background:var(--km)">🇰🇭 Écouter Khmer</button>
     <button class="langBtn" data-idx="1" style="background:var(--th)">🇹🇭 Écouter Thaï</button>
@@ -237,7 +253,8 @@
    en plein milieu comme l'ancien détecteur de silence) :
      1. MediaRecorder enregistre le micro en continu ; chaque bloc de 8 s
         pile est finalisé et envoyé, et le bloc suivant démarre aussitôt.
-        Format léger compatible Safari iPhone : audio/mp4 (AAC).
+        Format WebM/Opus (audio/webm;codecs=opus) — activé dans Safari iPhone,
+        compact et accepté directement par Whisper.
      2. Chaque bloc part vers l'API d'inférence GRATUITE de Hugging Face
         (router.huggingface.co) avec le modèle Whisper openai/whisper-large-v3.
         Une « Access Token » HF (gratuite, sans carte bancaire) est fournie
@@ -274,7 +291,8 @@ const el = { langs:$("langs"), btnStop:$("btnStop"), history:$("history"),
              empty:$("emptyHint"), pill:$("pill"), status:$("status"),
              console:$("console"), subtitle:$("subtitle"),
              btnConfig:$("btnConfig"), cfgOverlay:$("cfgOverlay"),
-             cfgInput:$("hfToken"), btnCfgSave:$("btnCfgSave"), btnCfgClose:$("btnCfgClose") };
+             cfgInput:$("hfToken"), btnCfgSave:$("btnCfgSave"), btnCfgClose:$("btnCfgClose"),
+             webmWarn:$("webmWarn"), webmWarnClose:$("webmWarnClose") };
 
 // ── État ──────────────────────────────────────────────────────────────────
 const state = {
@@ -409,7 +427,10 @@ function dBFromTimeDomain(arr){
 
 // ── Capture audio : blocs fixes de 8 s (MediaRecorder) ────────────────────
 function pickMime(){
-  const candidates = ["audio/mp4", "audio/mp4;codecs=mp4a.40.2", "audio/aac", "audio/webm;codecs=opus"];
+  // WebM/Opus FORCÉ en premier (activé dans Safari iPhone) — c'est le format
+  // que Hugging Face Whisper accepte le mieux. Les autres ne servent que de
+  // repli si WebM est réellement indisponible.
+  const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/mp4;codecs=mp4a.40.2", "audio/aac"];
   for (const m of candidates){
     if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) return m;
   }
@@ -455,7 +476,7 @@ function startBlock(){
   const chunks = [];
   rec.ondataavailable = ev => { if (ev.data && ev.data.size > 0) chunks.push(ev.data); };
   rec.onstop = () => {
-    const blob = new Blob(chunks, { type: rec.mimeType || "audio/mp4" });
+    const blob = new Blob(chunks, { type: rec.mimeType || "audio/webm" });
     chunks.length = 0;
     enqueueBlob(blob);
     if (state.running) startBlock();          // bloc suivant IMMÉDIATEMENT
@@ -576,7 +597,7 @@ async function hfTranscribe(blob, langCode){
   // Repli : corps = audio brut, langue détectée automatiquement par Whisper.
   const r = await fetch(HF_BASE, {
     method: "POST",
-    headers: { "Authorization": "Bearer " + token, "Content-Type": (blob.type || "audio/mp4") },
+    headers: { "Authorization": "Bearer " + token, "Content-Type": (blob.type || "audio/webm") },
     body: blob
   });
   const j = await r.json().catch(() => null);
@@ -696,10 +717,20 @@ if (!window.isSecureContext){
 if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
   log("❌ navigator.mediaDevices indisponible dans ce navigateur.");
 }
-if (window.MediaRecorder && MediaRecorder.isTypeSupported("audio/mp4")){
-  log("ℹ MediaRecorder audio/mp4 supporté (Safari iPhone).");
+// ── Détection WebM (Safari iPhone) : avertissement visible si désactivé ──
+function webmAvailable(){
+  return !!(window.MediaRecorder && MediaRecorder.isTypeSupported &&
+    MediaRecorder.isTypeSupported("audio/webm;codecs=opus"));
+}
+function showWebmWarning(){
+  el.webmWarn.classList.remove("hidden");
+  log("⚠️ WebM MediaRecorder désactivé — activez l'option expérimentale dans Safari puis rechargez.");
+}
+el.webmWarnClose.addEventListener("click", () => el.webmWarn.classList.add("hidden"));
+if (webmAvailable()){
+  log("ℹ MediaRecorder audio/webm;codecs=opus supporté (WebM actif) — blocs envoyés en WebM.");
 } else {
-  log("ℹ audio/mp4 non supporté ici — repli automatique sur un autre format.");
+  showWebmWarning();
 }
 </script>
 </body>
